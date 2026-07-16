@@ -5,6 +5,103 @@ Runs as a fully static application — no build tools, no npm, no external JavaS
 
 ---
 
+## High-Level Architecture & Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        BROWSER  (Static HTML + CSS + JS)                    │
+│                                                                              │
+│  ┌──────────────┐   ┌─────────────────────────┐   ┌──────────────────────┐  │
+│  │  Issue List  │   │   Issue Details Panel   │   │  AI Assistant Panel  │  │
+│  │  Panel       │   │                         │   │                      │  │
+│  │  • Search    │──▶│  • 20+ fields           │   │  • Chat history      │  │
+│  │  • Filter    │   │  • Status / Priority /  │   │  • Test case cards   │  │
+│  │  • Sort      │   │    Risk badges          │   │  • Table view        │  │
+│  │  • 25 issues │   │  • Domain identity      │   │  • Copy / Export     │  │
+│  └──────┬───────┘   │  • [Generate Test Cases]│   └──────────────────────┘  │
+│         │           └─────────────┬───────────┘              ▲              │
+│         │                         │                           │              │
+│         └──────────┬──────────────┘                           │              │
+│                    │  User action (click issue / generate)     │              │
+│                    ▼                                           │              │
+│  ┌─────────────────────────────────────────────────────┐       │              │
+│  │                      app.js                         │       │              │
+│  │  • Request lock (one request at a time)             │       │              │
+│  │  • Operation: List Issues / Show Details / Generate │       │              │
+│  │  • Parser selection  →  State update  →  UI render  │───────┘              │
+│  └──────────────────────────┬──────────────────────────┘                      │
+│                             │                                                  │
+│         ┌───────────────────┼───────────────────────┐                         │
+│         ▼                   ▼                        ▼                         │
+│  ┌─────────────┐   ┌──────────────────┐   ┌──────────────────────────────┐   │
+│  │  state.js   │   │    parsers.js    │   │         api.js               │   │
+│  │             │   │                  │   │  • AbortController (90s)     │   │
+│  │  Central    │   │  • Markdown      │   │  • POST to Langflow          │   │
+│  │  app state  │   │    table parser  │   │  • 4-path text extraction    │   │
+│  │  session-   │   │  • JSON issue    │   │  • Typed error classes       │   │
+│  │  Storage    │   │    details       │   │                              │   │
+│  │  local-     │   │  • Test case     │   └──────────────┬───────────────┘   │
+│  │  Storage    │   │    parser        │                  │                    │
+│  └─────────────┘   └──────────────────┘                  │                    │
+└───────────────────────────────────────────────────────────┼────────────────────┘
+                                                            │ HTTP POST
+                                                            ▼
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                    LANGFLOW  (localhost:7860)                                  │
+│                                                                                │
+│   Browser Prompt                                                               │
+│   "List all Jira issues"          ┌─────────────────────────────────────┐     │
+│   "Show details for GUSL-25"  ──▶ │  Langflow Flow                      │     │
+│   "Generate test cases for        │  • Groq LLM (llama-4-scout-17b)     │     │
+│    GUSL-25"                       │  • Jira backlog data injected       │     │
+│                                   │  • Prompt template enforcement      │     │
+│   ◀── JSON / Markdown response    └─────────────────────────────────────┘     │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## End-to-End User Flow
+
+```
+App starts
+    │
+    ▼
+Auto-load "List all Jira issues"
+    │
+    ▼
+25 issues rendered in left panel (sorted GUSL-1 → GUSL-25)
+    │
+    ├── Search / Filter issues
+    │
+    ▼
+User clicks an issue (e.g. GUSL-25)
+    │
+    ▼
+"Show details for GUSL-25" sent to Langflow
+    │
+    ▼
+JSON response parsed → All 20+ fields rendered in centre panel
+Domain badge updated (Health Care / Insurance / Banking / General)
+    │
+    ▼
+User clicks [Generate Test Cases]
+    │
+    ▼
+"Generate test cases for GUSL-25" sent to Langflow
+    │
+    ▼
+Markdown table parsed → 5 test cases rendered as Cards (default)
+    │
+    ├── Switch to Table view
+    ├── Copy All  →  structured plain text to clipboard
+    ├── Export .xlsx  →  genuine ZIP/OOXML workbook downloaded
+    │                    (no SheetJS, no external library)
+    └── Clear  →  chat cleared, ready for next generation
+```
+
+---
+
 ## Project Purpose
 
 Generate structured test cases from Jira backlog stories using a Langflow AI flow.
